@@ -1,0 +1,48 @@
+version: '3.3'
+
+services:
+  # Server service
+  server:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+    container_name: backend_products
+    ports:
+      - "3001:3001"
+    environment:
+      - ME_CONFIG_MONGODB_ADMINUSERNAME=admin
+      - ME_CONFIG_MONGODB_ADMINPASSWORD=password
+      - ME_CONFIG_MONGODB_SERVER=mongodb
+      - ME_CONFIG_BASICAUTH=false  # Disable basic authentication
+      - ME_CONFIG_BASICAUTH_USERNAME=mexpress
+      - ME_CONFIG_BASICAUTH_PASSWORD=mexpress
+      - MONGO_URI= mongodb://root:example@mongodb_e:27017/IMS
+    depends_on:
+      - mongodb_e
+
+  # Client service
+  client:
+    build:
+      context: ./Frontend/inventory_management_system
+      dockerfile: Dockerfile
+    container_name: frontend_new
+    ports:
+      - "8081:80"
+    depends_on:
+      - server
+
+  # Database service
+  mongodb_e:
+    image: mongo:latest
+    container_name: mongodb_express
+    environment:
+         - MONGO_INITDB_ROOT_USERNAME=admin
+         - MONGO_INITDB_ROOT_PASSWORD=password
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+
+volumes:
+  mongo-data:
+    driver: local
