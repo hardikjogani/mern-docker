@@ -1,0 +1,187 @@
+version: '3.3'
+
+services:
+  mongodb:
+    image: mongo:5.0.2
+    restart: unless-stopped
+    env_file: ./.env
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=$MONGODB_USER
+      - MONGO_INITDB_ROOT_PASSWORD=$MONGODB_PASSWORD
+    ports:
+      - $MONGODB_LOCAL_PORT:$MONGODB_DOCKER_PORT
+    volumes:
+      - db:/data/db
+    networks:
+      - backend
+  
+  bezkoder-api:
+    depends_on:
+      - mongodb
+    build: ./bezkoder-api
+    restart: unless-stopped
+    env_file: ./.env
+    ports:
+      - $NODE_LOCAL_PORT:$NODE_DOCKER_PORT
+    environment:
+      - DB_HOST=mongodb
+      - DB_USER=$MONGODB_USER
+      - DB_PASSWORD=$MONGODB_PASSWORD
+      - DB_NAME=$MONGODB_DATABASE
+      - DB_PORT=$MONGODB_DOCKER_PORT
+      - CLIENT_ORIGIN=$CLIENT_ORIGIN
+    networks:
+      - backend
+      - frontend
+
+  bezkoder-ui:
+    depends_on:
+      - bezkoder-api
+    build:
+      context: ./bezkoder-ui
+      args:
+        - REACT_APP_API_BASE_URL=$CLIENT_API_BASE_URL
+    ports:
+      - $REACT_LOCAL_PORT:$REACT_DOCKER_PORT
+    networks:
+      - frontend  
+
+volumes: 
+  db:
+
+networks:
+  backend:
+  frontend:
+
+
+############################################################################################
+
+MONGODB_USER=root
+MONGODB_PASSWORD=123456
+MONGODB_DATABASE=bezkoder_db
+MONGODB_LOCAL_PORT=7017
+MONGODB_DOCKER_PORT=27017
+
+NODE_LOCAL_PORT=6868
+NODE_DOCKER_PORT=8080
+
+CLIENT_ORIGIN=http://127.0.0.1:8888
+CLIENT_API_BASE_URL=http://127.0.0.1:6868/api
+
+REACT_LOCAL_PORT=8888
+REACT_DOCKER_PORT=80
+
+
+######################################################################################
+
+FROM node:14
+
+WORKDIR /bezkoder-api
+COPY package.json .
+RUN npm install
+RUN npm install cors
+COPY . .
+CMD npm start
+
+###########################################################################################
+
+
+  # Stage 1
+FROM node:14 as build-stage
+
+WORKDIR /bezkoder-ui
+COPY package.json .
+RUN npm install
+COPY . .
+
+ARG REACT_APP_API_BASE_URL
+ENV REACT_APP_API_BASE_URL=$REACT_APP_API_BASE_URL
+
+RUN npm run build
+
+# Stage 2
+FROM nginx:1.17.0-alpine
+
+COPY --from=build-stage /bezkoder-ui/build /usr/share/nginx/html
+EXPOSE $REACT_DOCKER_PORT
+
+CMD nginx -g 'daemon off;'
+
+############################################################################################
+server.js file
+
+###########################################################################################  
+require("dotenv").config();
+const express = require("express");
+const cors = require("cors");
+
+const app = express();
+
+var corsOptions = {
+  origin: process.env.CLIENT_ORIGIN || "http://localhost:8888"
+};
+
+app.use(cors(corsOptions));
+
+// parse requests of content-type - application/json
+app.use(express.json());
+
+// parse requests of content-type - application/x-www-form-urlencoded
+app.use(express.urlencoded({ extended: true }));
+
+const db = require("./app/models");
+
+console.log(db.url);
+
+db.mongoose
+  .connect(db.url, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true
+  })
+  .then(() => {
+    console.log("Connected to the database!");
+  })
+  .catch(err => {
+    console.log("Cannot connect to the database!", err);
+    process.exit();
+  });
+
+// simple route
+app.get("/", (req, res) => {
+  res.json({ message: "Welcome to bezkoder application." });
+});
+
+require("./app/routes/turorial.routes")(app);
+
+// set port, listen for requests
+const PORT = process.env.NODE_DOCKER_PORT || 6868;
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}.`);
+});  
+
+##########################################################
+nginx.conf
+
+server {
+    listen 80;
+
+    root /usr/share/nginx/html;
+    index index.html index.htm;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    error_page 500 502 503 504 /50x.html;
+    location = /50x.html {
+        root /usr/share/nginx/html;
+    }
+}  
+
+
+  
+
+  
+
+  
+
